@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <stdlib.h>
 
+// assume file name will be .txt?
 char* append_file_name(char* dest, char* src, char* string) {
 	char* src_copy = src;
 	while ( *src_copy != '.' && *src_copy != '\0') src_copy++;
@@ -14,11 +15,18 @@ char* append_file_name(char* dest, char* src, char* string) {
 	return dest;
 }
 
+int cipher(char* buffer, int num_chars, int shift_val) {
+	for (int i = 0; i < num_chars; i++) {
+		buffer[i] = buffer[i] + shift_val;
+	}	
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	
 	char output_file_name[128];    //You may assume that the length of the output file name will not exceed 128 characters.
-	
+
 	// Read command line arguments
 		// ./filesec -e|-d [filename.txt]
 		// TODO: remove hard coded argv[1]? - to allow for additional arguments?
@@ -43,18 +51,43 @@ int main(int argc, char** argv)
 		// TODO: bad early return?
 	}
 	
-	append_file_name(output_file_name, argv[2], file_name_suffix);
-	printf("%s", output_file_name);
+	char* input_file_name = argv[2]; 
+	append_file_name(output_file_name, input_file_name, file_name_suffix);
+	printf("Output file name: %s\n", output_file_name);
 
+	int fd_read = open(input_file_name, O_RDONLY);
+	if (fd_read == -1) {
+		perror("Failed to open file");
+		return -1;
+	}
 
-	// open appropriate file for read-only
+	int fd_write = open(output_file_name, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (fd_write == -1) {
+		perror("Failed to create output file");
+		return -1;
+	}
+	
+	int buffer_length = 10;
+	char buffer[buffer_length];
+	size_t bytes_read = read(fd_read, buffer, sizeof(buffer));
+	size_t bytes_written;
+	while (bytes_read > 0) {
+		cipher(buffer, bytes_read / sizeof(char), shift_val);
+		bytes_written = write(fd_write, buffer, bytes_read);
+		bytes_read = read(fd_read, buffer, sizeof(buffer));
+	}
+	if (bytes_read == -1) {
+		perror("Failed to read file");
+		return -1;
+	}
 	
 	//  
 	
 	// 
 
 
-    
+   	close(fd_read);
+       	close(fd_write);	
 	return 0;
 
 }
