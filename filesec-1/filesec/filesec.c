@@ -5,7 +5,7 @@
 #include <sys/time.h>
 #include <stdlib.h>
 
-// assume file name will be .txt?
+// assume file name will be .txt? Allowed to use stat() to check if its a directory?
 char* append_file_name(char* dest, char* src, char* string) {
 	char* src_copy = src;
 	while ( *src_copy != '.' && *src_copy != '\0') src_copy++;
@@ -15,7 +15,8 @@ char* append_file_name(char* dest, char* src, char* string) {
 	return dest;
 }
 
-int cipher(char* buffer, int num_chars, int shift_val) {
+int cipher(char* buffer, size_t buffer_size, int shift_val) {
+	int num_chars = buffer_size / sizeof(char);
 	for (int i = 0; i < num_chars; i++) {
 		buffer[i] = buffer[i] + shift_val;
 	}	
@@ -67,14 +68,18 @@ int main(int argc, char** argv)
 		return -1;
 	}
 	
-	int buffer_length = 10;
-	char buffer[buffer_length];
-	size_t bytes_read = read(fd_read, buffer, sizeof(buffer));
+	int buffer_size = 10;
+	char buffer[buffer_size];
+	size_t bytes_read = read(fd_read, buffer, buffer_size * sizeof(char));
 	size_t bytes_written;
-	while (bytes_read > 0) {
-		cipher(buffer, bytes_read / sizeof(char), shift_val);
+	while (bytes_read > 0 && bytes_written != -1) {
+		cipher(buffer, buffer_size, shift_val);
 		bytes_written = write(fd_write, buffer, bytes_read);
-		bytes_read = read(fd_read, buffer, sizeof(buffer));
+		bytes_read = read(fd_read, buffer, buffer_size * sizeof(char));
+	}
+	if (bytes_written == -1) {
+		perror("Failed to write to new file");
+		return -1;
 	}
 	if (bytes_read == -1) {
 		perror("Failed to read file");
