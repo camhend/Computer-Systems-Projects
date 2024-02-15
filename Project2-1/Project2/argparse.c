@@ -16,7 +16,14 @@
 */
 static int argCount(char*line)
 {
- //write your code
+	int count = 0;
+	while (*line && *line == ' ') line++;
+	while (*line && *line != '\n') {
+		if (*line) count++;
+		while (*line && *line != ' ') line++;
+		while (*line && *line == ' ') line++;
+	}
+	return count;
 }
 
 
@@ -29,6 +36,30 @@ static int argCount(char*line)
 */
 char** argparse(char* line, int* argcp)
 {
-  //write your code
+	*argcp = argCount(line);
+	char** args = malloc(*argcp * sizeof(char*));
+	int i = 0;
+	while (*line && *line != '\n') {
+		// skip leading whitespace
+		while (*line && *line == ' ') 
+			line++;
+		if (*line) {
+			// use pointer l to find end of word
+			char* lp = line;
+			while (*lp && *lp != ' ' && *lp != '\n') lp++;
+			// malloc space 
+			args[i] = malloc(lp - line + 1);
+			int j = 0;
+			while (line != lp) {
+				args[i][j] = *line;
+				line++;
+				j++;
+			}
+			args[i][j] = '\0';
+		}
+		while (*line && *line != ' ') line++;
+		i++;
+	}	
+	return args;
 }
 

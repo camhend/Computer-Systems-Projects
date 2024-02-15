@@ -26,10 +26,28 @@ ssize_t getinput(char** line, size_t* size);
 
 int main () {
 
- //write your code
- //use getinput and processline as appropriate
+	char* line = NULL;
+	size_t size = 0;
+	ssize_t len;
+	while (1) {		
+		// If getinput fails, quit 
+		// TODO: try to recover stdin after failure?
+		if ( (len = getinput(&line, &size) == -1) ) {
+			free(line);
+			return EXIT_FAILURE;
+		}
+		processline(line);
+			
+		//printf("%s", line);
+		if (strcmp(line, "exit\n") == 0) break;
+	}
+	
+	free(line);
 
-  return EXIT_SUCCESS;
+//write your code
+//use getinput and processline as appropriate
+
+	return EXIT_SUCCESS;
 }
 
 
@@ -45,13 +63,11 @@ int main () {
 * Hint: There is a standard i/o function that can make getinput easier than it sounds.
 */
 ssize_t getinput(char** line, size_t* size) {
-
-  ssize_t len = 0;
-  
-  
-  //write your code
-
-  return len;
+	ssize_t len = 0;
+	if (*line == NULL) *size = 0;
+	len = getline(line, size, stdin);	
+	if (len == -1 ) perror("Failed to read input line");
+	return len;
 }
 
 
@@ -67,14 +83,30 @@ void processline (char *line)
  /*check whether line is empty*/
   //write your code
     
-  pid_t cpid;
-  int   status;
-  int argCount;
-  char** arguments = argparse(line, &argCount);
+	pid_t cpid;
+	int   status;
+	int argCount;
+
+	char** arguments = argparse(line, &argCount); 
+
+	if (argCount > 0) {
+		if (builtIn(arguments, argCount)) {
+			// execute builtin command
+			
+		} else {
+			printf("Not a builtin function");
+			// fork to execute command
+			// execlp?
+		}
+	}
+	
+
+	// must free all strings in arguments[] and arguments ptr itself
+	for (int i = 0; i < argCount; i++) {
+		free(arguments[i]);
+	}
+	free(arguments);
   
-  /*check whether arguments are builtin commands
-   *if not builtin, fork to execute the command.
-   */
-    //write your code
-}
+  
+  }
 
