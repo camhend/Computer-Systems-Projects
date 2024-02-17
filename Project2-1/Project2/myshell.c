@@ -29,19 +29,41 @@ int main () {
 	char* line = NULL;
 	size_t size = 0;
 	ssize_t len;
+
+	/*	
 	while (1) {		
-		// If getinput fails, quit 
-		// TODO: try to recover stdin after failure?
+		//If getinput fails, quit 
+		//TODO: try to recover stdin after failure?
 		if ( (len = getinput(&line, &size) == -1) ) {
 			free(line);
 			return EXIT_FAILURE;
 		}
 		processline(line);
 			
-		//printf("%s", line);
+		printf("%s", line);
 		if (strcmp(line, "exit\n") == 0) break;
 	}
-	
+	*/
+
+	/*
+	printf("Running ls -l: \n");
+	char* args[2] = {"ls", "-l"};
+	int argc = 2;
+	ls(args, argc);
+
+	printf("\nRunning ls: \n");
+	char* args2[1] = {"ls"};
+	int argc2 = 1;
+	ls(args2, argc2);
+	*/
+
+	printf("\nRunning cp some.txt test: \n");
+	char* args2[3] = {"cp", "some.txt", "some2.txt"};
+	int argc2 = 3;
+	cp(args2, argc2);
+
+
+
 	free(line);
 
 //write your code
@@ -94,7 +116,7 @@ void processline (char *line)
 			// execute builtin command
 			
 		} else {
-			printf("Not a builtin function");
+			printf("Not a builtin function\n");
 			// fork to execute command
 			// execlp?
 		}
@@ -103,8 +125,11 @@ void processline (char *line)
 
 	// must free all strings in arguments[] and arguments ptr itself
 	for (int i = 0; i < argCount; i++) {
+		printf("Freed: %s\n", arguments[i]);
 		free(arguments[i]);
+		
 	}
+	printf("Arg count: %d\n", argCount);
 	free(arguments);
   
   

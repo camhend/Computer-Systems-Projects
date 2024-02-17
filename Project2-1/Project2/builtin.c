@@ -21,11 +21,12 @@
 static void exitProgram(char** args, int argcp);
 static void cd(char** args, int argpcp);
 static void pwd(char** args, int argcp);
-static void ls(char** args, int argcp);
-static void cp(char** args, int arrgcp);
+//static 
+void ls(char** args, int argcp);
+//static 
+void cp(char** args, int arrgcp);
 static void env (char** args, int arrgcp);
 static int numdigits(int num);
-static int getstat(char* filename, struct stat* dirent_stat);
 static void printperms(struct stat* dirent_stat);
 static int cmp_str(const void *l, const void *r);
 
@@ -41,7 +42,7 @@ int builtIn(char** args, int argcp)
 		else if (strcmp(args[0], "cd") == 0)    {}
 		else if (strcmp(args[0], "pwd") == 0)   {}
 		else if (strcmp(args[0], "ls") == 0)    { ls(args, argcp); }
-		else if (strcmp(args[0], "cp") == 0)    {}
+		else if (strcmp(args[0], "cp") == 0)    { cp(args, argcp); }
 		else if (strcmp(args[0], "env") == 0) 	{}
 		else { return 0; }
 	} else {
@@ -66,7 +67,9 @@ static void cd(char** args, int argcp)
  //write your code
 }
 
-static void ls(char** args, int argcp) 
+//static
+//TODO: memory leak... 
+void ls(char** args, int argcp) 
 {
 	if (argcp > 2 ) {
 		printf("ls: too many arguments\n");
@@ -86,34 +89,36 @@ static void ls(char** args, int argcp)
 	}
 	
 	DIR* dir = opendir("./");
+	int fd = dirfd(dir); // automatically closed by closedir(dir)
 	struct dirent* dirent = readdir(dir);
-	long start_offset;
+
 	// skip "." and ".."
+	long start_offset;
 	while (strcmp(dirent->d_name, ".") == 0 || strcmp(dirent->d_name, "..") == 0) {
-			// DIR offset of first dirent after "." and ".."
-			start_offset = telldir(dir);
-			dirent = readdir(dir);
-	}	
+		// DIR offset of first dirent after "." and ".."
+		start_offset = telldir(dir);
+		dirent = readdir(dir);
+	}
+	
 	int total_entries = 0;
-	while (dirent != NULL) {
+	while (dirent != NULL) {	
 		total_entries++;
 	      	dirent = readdir(dir);
-	}	
+	}
 
 	// reset to first dirent after "." and ".."
 	seekdir(dir, start_offset);
 	dirent = readdir(dir);
 
-	// make alphabetically sorted list of filenames
-	// TODO: free filenames and filename strings
-	char** filenames = malloc(total_entries * sizeof(char*));
+	// make alphabetically sorted list of filenames	
+	char* filenames[total_entries];
 	for (int i = 0; i < total_entries; i++) {
-		filenames[i] = malloc( strlen(dirent->d_name) + 1 );
+		filenames[i] = malloc(strlen(dirent->d_name) + 1);
 		strcpy(filenames[i], dirent->d_name);
 		dirent = readdir(dir);
-	}
-	qsort(filenames, total_entries, sizeof filenames[0], cmp_str);
-
+	}		
+	qsort(filenames, total_entries, sizeof filenames[0], cmp_str);	
+	
 	// -l option was not entered: print regular form
 	if (!lflag) 
 	{
@@ -129,25 +134,29 @@ static void ls(char** args, int argcp)
 		int ownername_maxlen = 0;
 		int grpname_maxlen = 0;
 		int filesize_maxdigits = 0;
-		struct stat* dirent_stat = malloc(sizeof(struct stat));
+		struct stat statbuf;
+		struct stat* dirent_stat = &statbuf;	
 
 		// Get num entries
 		// Also get max length of variable length attributes for column alignment
 		// TODO: move to separate function?
 		for (int i = 0; i < total_entries; i++) {
-			if ( getstat(filenames[i], dirent_stat) == -1) {
+			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
 				fprintf(stderr, "Failed to get file info from \"%s\": %s\n", 
 					filenames[i], strerror(errno));
 				// return -1 on fail? Prototype returns void?
+				// TODO free before exit?
 				return;
 			}	
+			
 			struct passwd* user = getpwuid(dirent_stat->st_uid);
 			struct group* grp = getgrgid(dirent_stat->st_gid);
 
 			int a = links_maxdigits;
-			int b = numdigits( (int) dirent_stat->st_nlink);
+			int b = numdigits( (int) (dirent_stat->st_nlink) );
 			links_maxdigits = a > b ? a : b;
-
+				
+			
 			a = ownername_maxlen;
 			b = strlen(user->pw_name);
 			ownername_maxlen = a > b ? a : b;
@@ -157,18 +166,23 @@ static void ls(char** args, int argcp)
 			grpname_maxlen = a > b ? a : b;
 
 			a = filesize_maxdigits;
-			b = numdigits( (int) dirent_stat->st_size);
+			b = numdigits( (int) (dirent_stat->st_size));
 			filesize_maxdigits = a > b ? a : b;
 		}
+		
 		
 		// print files and attributes - 
 		// 	TODO: make seperate function?
 		// 	TODO: print total disk space at top
+		//
+		printf("Total entries: %d\n", total_entries);
+			
 		for (int i = 0; i < total_entries; i++) {
-			if ( getstat(filenames[i], dirent_stat) == -1) {
+			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
 				fprintf(stderr, "Failed to get file info from \"%s\": %s\n", 
 					filenames[i], strerror(errno));
 				// return -1 on fail? Prototype returns void?
+				// TODO free before exit
 				return;
 			}
 			struct passwd* owner = getpwuid(dirent_stat->st_uid);
@@ -189,30 +203,22 @@ static void ls(char** args, int argcp)
 			printf("%*d ", filesize_maxdigits, (int) dirent_stat->st_size); 	// file size
 			printf("%s ", mtim_str);						// modification time
 			printf("%s\n", filenames[i]);						// file name
-		}
-		free(dirent_stat);
+		} 
 		
-	}
-
+	} // end of ls -l option
+	for (int i = 0; i < total_entries; i++) {
+		free(filenames[i]);
+	}	
 	if (closedir(dir) < 0) 
 		perror("ls: failed to close directory");
 	// TODO: return 1 on success?
 	return;
-}
+} // end of ls
 
 static int numdigits(int num) {
 	int digits = 1;
 	while ((num = num / 10) > 0) digits++;
      	return digits;	
-}
-
-// get stat file of dirent in current working directory
-static int getstat(char* filename, struct stat* dirent_stat) {
-	char pathname[PATH_MAX];
-	getcwd(pathname, PATH_MAX);
-	strcat(pathname, "/");
-	strcat(pathname, filename);
-	return stat(pathname, dirent_stat);
 }
 
 static void printperms(struct stat* dirent_stat) {
@@ -232,70 +238,54 @@ static void printperms(struct stat* dirent_stat) {
 	return;
 }
 
+
 int cmp_str(const void* l, const void* r) {
-	//const char* ls = (const char*) l;
-	//const char* rs = (const char*) r;
 	return strcasecmp(* (const char**) l, *(const char**) r);
 }
 
-static void cp (char** args, int argcp) {
+//static 
+void cp (char** args, int argcp) {
 
-	if (argcp > 2 || argcp < 2) {
-		printf("Usage: cp [src_file_name] [dest_file_name]");
+	if (argcp != 3) {
+		printf("Usage: cp [src_file_name] [dest_file_name]\n");
+		return;
 	}
-	
-	struct stat* filestat;
-	if ( getstat(args[0], filestat) == -1) {
-		fprintf(stderr, "Failed to get file info from \"%s\": %s\n", 
-			args[0], strerror(errno));
-			// return -1 on fail? Prototype returns void?
-			return;
+		
+	FILE* fsrc;
+	FILE* fdest;
+	// open only if file exists
+	if ((fsrc = fopen(args[1], "r")) == NULL) {
+		fprintf(stderr, "Unable to open source file \"%s\": %s\n", 
+					args[1], strerror(errno));
+		return;
+	} 
+	// open for write only if dest filename does NOT exist 
+	if ((fdest = fopen(args[2], "wx"  )) == NULL)  {
+		fprintf(stderr, "Unable to create destination file \"%s\": %s\n", 
+					args[1], strerror(errno));
+		return;
 	}
-	if ( getstat(args[1], filestat) != -1) {
-		fprintf(stderr, "Destination file name already exists: \"%s\"\n", args[1]);
-			// return -1 on fail? Prototype returns void?
-			return;
+
+	// begin file I/O
+	char buffer[BUFSIZ];
+		// TODO: change file permissions? Same as source file?
+	size_t bytes_read = fread(buffer, sizeof(char), sizeof(buffer), fsrc);
+	size_t bytes_written = fwrite(buffer, sizeof(char), bytes_read/(sizeof(char)), fdest);
+
+	// Loop to read input file until EOF or until a read/write error occurs.
+	while (bytes_read > 0 && bytes_written == bytes_read) {
+		bytes_written = fwrite(buffer, sizeof(char), bytes_read/(sizeof(char)), fdest);
+		bytes_read = fread(buffer, sizeof(char), sizeof(buffer), fsrc);
 	}
-
-	char* src = args[0];
-	char* dest = args[1];
-
-        // Begin file I/O operations
-        int exit_code = 0;
-        int fd_read = open(src, O_RDONLY);
-        int fd_write;
-        if (fd_read != -1) {
-				// TODO: change file permissions? Same as source file?
-                fd_write = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-                if (fd_write != -1) {
-                        char buffer[BUFSIZ];
-                        size_t bytes_read = read(fd_read, buffer, BUFSIZ * sizeof(char));
-                        size_t bytes_written;
-                        // Loop to read input file until EOF or until a read/write error occurs.
-                        while (bytes_read > 0 && bytes_written != -1) {
-                                bytes_written = write(fd_write, buffer, bytes_read);
-                                bytes_read = read(fd_read, buffer, BUFSIZ * sizeof(char));
-				
-                        }
-                        if (bytes_read == -1) {
-                                perror("Failed during read from file");
-                                exit_code = -1;
-                        } else if (bytes_written == -1) {
-                                perror("Failed during write to file");
-                                exit_code = -1;
-                        }
-                } else {
-                        perror("Failed to create output file");
-                        exit_code = -1;
-                }
-        } else {
-                perror("Failed to open input file");
-                exit_code = -1;
-        }
-
-        close(fd_read);
-        close(fd_write);
-
-        return exit_code;
+	if (ferror(fsrc)) {
+		fprintf(stderr, "Failed during read from source file \"%s\"\n", args[1]);
+	}
+	if (bytes_written < bytes_read) {
+		fprintf(stderr, "Failed during write to destination file:  \"%s\"\n", args[2]);
+	}
+        
+	if (fclose(fsrc) == EOF) perror("Failed to close src file");
+	if (fclose(fdest) == EOF) perror("Failed to close dest file");
+        return;
 }
 
