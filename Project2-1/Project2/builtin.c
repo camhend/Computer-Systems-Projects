@@ -21,12 +21,10 @@
 static void exitProgram(char** args, int argcp);
 static void cd(char** args, int argpcp);
 static void pwd(char** args, int argcp);
-//static 
-void ls(char** args, int argcp);
-//static 
-void cp(char** args, int arrgcp);
+static int ls(char** args, int argcp);
+static int cp(char** args, int arrgcp);
 static void env (char** args, int arrgcp);
-static int numdigits(int num);
+static int numdigits(long long unsigned num);
 static void printperms(struct stat* dirent_stat);
 static int cmp_str(const void *l, const void *r);
 
@@ -67,14 +65,11 @@ static void cd(char** args, int argcp)
  //write your code
 }
 
-//static
-//TODO: memory leak... 
-void ls(char** args, int argcp) 
+static int ls(char** args, int argcp) 
 {
 	if (argcp > 2 ) {
 		printf("ls: too many arguments\n");
-		// TODO: return -1 on fail?
-		return;
+		return -1;
 	}
 
 	int lflag = 0;	
@@ -83,8 +78,7 @@ void ls(char** args, int argcp)
 			lflag = 1;
 		} else {
 			printf("ls: argument \"%s\" not recognized\n", args[1]);
-			// TODO: return -1 on fail?
-			return;
+			return -1;
 		}
 	}
 	
@@ -95,7 +89,7 @@ void ls(char** args, int argcp)
 	// skip "." and ".."
 	long start_offset;
 	while (strcmp(dirent->d_name, ".") == 0 || strcmp(dirent->d_name, "..") == 0) {
-		// DIR offset of first dirent after "." and ".."
+		// get DIR offset of first dirent after "." and ".."
 		start_offset = telldir(dir);
 		dirent = readdir(dir);
 	}
@@ -137,23 +131,26 @@ void ls(char** args, int argcp)
 		struct stat statbuf;
 		struct stat* dirent_stat = &statbuf;	
 
-		// Get num entries
+		// Get total num entries, and total used disk space
 		// Also get max length of variable length attributes for column alignment
-		// TODO: move to separate function?
 		for (int i = 0; i < total_entries; i++) {
 			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
-				fprintf(stderr, "Failed to get file info from \"%s\": %s\n", 
+				fprintf(stderr, "ls: failed to get file info from \"%s\": %s\n", 
 					filenames[i], strerror(errno));
-				// return -1 on fail? Prototype returns void?
-				// TODO free before exit?
-				return;
+				for (int i = 0; i < total_entries; i++) {
+					free(filenames[i]);	
+				}
+				if (closedir(dir) == -1) { 
+					perror("ls: failed to close directory");
+				}
+				return -1;
 			}	
 			
 			struct passwd* user = getpwuid(dirent_stat->st_uid);
 			struct group* grp = getgrgid(dirent_stat->st_gid);
 
 			int a = links_maxdigits;
-			int b = numdigits( (int) (dirent_stat->st_nlink) );
+			int b = numdigits( (long long unsigned) (dirent_stat->st_nlink) );
 			links_maxdigits = a > b ? a : b;
 				
 			
@@ -164,26 +161,29 @@ void ls(char** args, int argcp)
 			a = grpname_maxlen;
 			b = strlen(grp->gr_name);
 			grpname_maxlen = a > b ? a : b;
+			
 
 			a = filesize_maxdigits;
-			b = numdigits( (int) (dirent_stat->st_size));
+			b = numdigits( (long long unsigned) (dirent_stat->st_size));
 			filesize_maxdigits = a > b ? a : b;
 		}
 		
-		
 		// print files and attributes - 
-		// 	TODO: make seperate function?
 		// 	TODO: print total disk space at top
 		//
 		printf("Total entries: %d\n", total_entries);
 			
 		for (int i = 0; i < total_entries; i++) {
 			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
-				fprintf(stderr, "Failed to get file info from \"%s\": %s\n", 
+				fprintf(stderr, "ls: failed to get file info from \"%s\": %s\n", 
 					filenames[i], strerror(errno));
-				// return -1 on fail? Prototype returns void?
-				// TODO free before exit
-				return;
+				for (int i = 0; i < total_entries; i++) {
+					free(filenames[i]);
+				}	
+				if (closedir(dir) == -1) { 
+					perror("ls: failed to close directory");
+				}
+				return -1;
 			}
 			struct passwd* owner = getpwuid(dirent_stat->st_uid);
 			struct group* grp = getgrgid(dirent_stat->st_gid);
@@ -196,11 +196,14 @@ void ls(char** args, int argcp)
 
 			// begin print all attributes
 			printperms(dirent_stat);						// permissions
-			printf("%*d ", 
-				links_maxdigits, (int) dirent_stat->st_nlink);  		// number of hard links
+			printf("%*d ",								// number of hard links 
+				links_maxdigits, 
+				(int) (dirent_stat->st_nlink));  		               
 			printf("%*s ", ownername_maxlen, owner->pw_name);			// owner name
 			printf("%*s ", grpname_maxlen, grp->gr_name);				// group name
-			printf("%*d ", filesize_maxdigits, (int) dirent_stat->st_size); 	// file size
+			printf("%*llu ",							// file size 
+				filesize_maxdigits, 
+				(long long unsigned) (dirent_stat->st_size));                  
 			printf("%s ", mtim_str);						// modification time
 			printf("%s\n", filenames[i]);						// file name
 		} 
@@ -209,13 +212,14 @@ void ls(char** args, int argcp)
 	for (int i = 0; i < total_entries; i++) {
 		free(filenames[i]);
 	}	
-	if (closedir(dir) < 0) 
+	if (closedir(dir) == -1) { 
 		perror("ls: failed to close directory");
-	// TODO: return 1 on success?
-	return;
+	}
+	return 1;
 } // end of ls
 
-static int numdigits(int num) {
+// TODO account for case num = 10
+static int numdigits(long long unsigned num) {
 	int digits = 1;
 	while ((num = num / 10) > 0) digits++;
      	return digits;	
@@ -238,54 +242,65 @@ static void printperms(struct stat* dirent_stat) {
 	return;
 }
 
-
-int cmp_str(const void* l, const void* r) {
+static int cmp_str(const void* l, const void* r) {
 	return strcasecmp(* (const char**) l, *(const char**) r);
 }
 
-//static 
-void cp (char** args, int argcp) {
+static int cp (char** args, int argcp) {
 
 	if (argcp != 3) {
 		printf("Usage: cp [src_file_name] [dest_file_name]\n");
-		return;
+		return -1;
 	}
-		
+	char* src_path = args[1];
+	char* dest_path = args[2];
 	FILE* fsrc;
 	FILE* fdest;
-	// open only if file exists
-	if ((fsrc = fopen(args[1], "r")) == NULL) {
-		fprintf(stderr, "Unable to open source file \"%s\": %s\n", 
-					args[1], strerror(errno));
-		return;
-	} 
-	// open for write only if dest filename does NOT exist 
-	if ((fdest = fopen(args[2], "wx"  )) == NULL)  {
-		fprintf(stderr, "Unable to create destination file \"%s\": %s\n", 
-					args[1], strerror(errno));
-		return;
+	// open for read, but only if file exists
+	if ( (fsrc = fopen(src_path, "r")) == NULL ) {
+		fprintf(stderr, "cp: unable to open source file \"%s\": %s\n", 
+			src_path, strerror(errno));
+		return -1;
 	}
-
+	struct stat src_stat;
+	if ( stat(src_path, &src_stat) == -1 ) {
+		fprintf(stderr, "cp: failed to get file info from \"%s\": %s\n", 
+			src_path, strerror(errno));
+		return -1;
+	} 
+	if (S_ISDIR(src_stat.st_mode)) {
+		fprintf(stderr, "cp: cannot copy a directory file\n");
+		return -1;
+	}
+	// open for write, but only if dest filename does NOT exist 
+	if ((fdest = fopen(dest_path, "wx")) == NULL)  {
+		fprintf(stderr, "cp: unable to create destination file \"%s\": %s\n", 
+			dest_path, strerror(errno));
+		return -1;
+	}
 	// begin file I/O
 	char buffer[BUFSIZ];
 		// TODO: change file permissions? Same as source file?
-	size_t bytes_read = fread(buffer, sizeof(char), sizeof(buffer), fsrc);
-	size_t bytes_written = fwrite(buffer, sizeof(char), bytes_read/(sizeof(char)), fdest);
+	size_t bytes_read;
+	size_t bytes_written;
 
 	// Loop to read input file until EOF or until a read/write error occurs.
-	while (bytes_read > 0 && bytes_written == bytes_read) {
-		bytes_written = fwrite(buffer, sizeof(char), bytes_read/(sizeof(char)), fdest);
+	do {
 		bytes_read = fread(buffer, sizeof(char), sizeof(buffer), fsrc);
-	}
+		bytes_written = fwrite(buffer, sizeof(char), bytes_read/(sizeof(char)), fdest);
+	} while (bytes_read > 0 && bytes_written == bytes_read);
+
 	if (ferror(fsrc)) {
-		fprintf(stderr, "Failed during read from source file \"%s\"\n", args[1]);
+		fprintf(stderr, "cp: failed during read from source file \"%s\": %s\n", 
+			src_path, strerror(errno));
 	}
 	if (bytes_written < bytes_read) {
-		fprintf(stderr, "Failed during write to destination file:  \"%s\"\n", args[2]);
+		fprintf(stderr, "cp: failed during write to destination file: \"%s\" %s\n", 
+			dest_path, strerror(errno));
 	}
         
-	if (fclose(fsrc) == EOF) perror("Failed to close src file");
-	if (fclose(fdest) == EOF) perror("Failed to close dest file");
-        return;
+	if (fclose(fsrc) == EOF) perror("cp: failed to close source file");
+	if (fclose(fdest) == EOF) perror("cp: failed to close destination file");
+        return 1;
 }
 

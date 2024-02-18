@@ -30,8 +30,9 @@ int main () {
 	size_t size = 0;
 	ssize_t len;
 
-	/*	
-	while (1) {		
+		
+	while (1) {	
+		printf("%% ");	
 		//If getinput fails, quit 
 		//TODO: try to recover stdin after failure?
 		if ( (len = getinput(&line, &size) == -1) ) {
@@ -40,11 +41,9 @@ int main () {
 		}
 		processline(line);
 			
-		printf("%s", line);
 		if (strcmp(line, "exit\n") == 0) break;
 	}
-	*/
-
+	
 	/*
 	printf("Running ls -l: \n");
 	char* args[2] = {"ls", "-l"};
@@ -55,13 +54,13 @@ int main () {
 	char* args2[1] = {"ls"};
 	int argc2 = 1;
 	ls(args2, argc2);
-	*/
+	
 
-	printf("\nRunning cp some.txt test: \n");
-	char* args2[3] = {"cp", "some.txt", "some2.txt"};
+	printf("\nRunning cp test some3.txt: \n");
+	char* args2[3] = {"cp", "test", "some3.txt"};
 	int argc2 = 3;
 	cp(args2, argc2);
-
+	*/
 
 
 	free(line);
@@ -122,14 +121,10 @@ void processline (char *line)
 		}
 	}
 	
-
-	// must free all strings in arguments[] and arguments ptr itself
 	for (int i = 0; i < argCount; i++) {
-		printf("Freed: %s\n", arguments[i]);
 		free(arguments[i]);
 		
 	}
-	printf("Arg count: %d\n", argCount);
 	free(arguments);
   
   
