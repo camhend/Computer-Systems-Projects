@@ -17,13 +17,16 @@
 #include <stdint.h>
 #include <time.h>
 
+#define BUFFSIZE 4096
+#define BLKSIZE 1024 
+
 //Prototypes
 static void exitProgram(char** args, int argcp);
 static void cd(char** args, int argpcp);
 static void pwd(char** args, int argcp);
 static int ls(char** args, int argcp);
 static int cp(char** args, int arrgcp);
-static void env (char** args, int arrgcp);
+static int env (char** args, int argcp);
 static int numdigits(long long unsigned num);
 static void printperms(struct stat* dirent_stat);
 static int cmp_str(const void *l, const void *r);
@@ -39,9 +42,9 @@ int builtIn(char** args, int argcp)
 		     if (strcmp(args[0], "exit ") == 0) {}
 		else if (strcmp(args[0], "cd") == 0)    {}
 		else if (strcmp(args[0], "pwd") == 0)   {}
-		else if (strcmp(args[0], "ls") == 0)    { ls(args, argcp); }
-		else if (strcmp(args[0], "cp") == 0)    { cp(args, argcp); }
-		else if (strcmp(args[0], "env") == 0) 	{}
+		else if (strcmp(args[0], "ls") == 0)    { ls(args, argcp);  }
+		else if (strcmp(args[0], "cp") == 0)    { cp(args, argcp);  }
+		else if (strcmp(args[0], "env") == 0) 	{ env(args, argcp); }
 		else { return 0; }
 	} else {
 		return 0;
@@ -124,6 +127,7 @@ static int ls(char** args, int argcp)
         // -l flag was entered: print long form
 	else 
 	{
+		long total_blocks = 0;
 		int links_maxdigits = 0;
 		int ownername_maxlen = 0;
 		int grpname_maxlen = 0;
@@ -131,7 +135,7 @@ static int ls(char** args, int argcp)
 		struct stat statbuf;
 		struct stat* dirent_stat = &statbuf;	
 
-		// Get total num entries, and total used disk space
+		// Get total num entries, and total blocks allocated
 		// Also get max length of variable length attributes for column alignment
 		for (int i = 0; i < total_entries; i++) {
 			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
@@ -145,7 +149,8 @@ static int ls(char** args, int argcp)
 				}
 				return -1;
 			}	
-			
+			total_blocks += dirent_stat->st_blocks;
+
 			struct passwd* user = getpwuid(dirent_stat->st_uid);
 			struct group* grp = getgrgid(dirent_stat->st_gid);
 
@@ -153,7 +158,6 @@ static int ls(char** args, int argcp)
 			int b = numdigits( (long long unsigned) (dirent_stat->st_nlink) );
 			links_maxdigits = a > b ? a : b;
 				
-			
 			a = ownername_maxlen;
 			b = strlen(user->pw_name);
 			ownername_maxlen = a > b ? a : b;
@@ -167,12 +171,16 @@ static int ls(char** args, int argcp)
 			b = numdigits( (long long unsigned) (dirent_stat->st_size));
 			filesize_maxdigits = a > b ? a : b;
 		}
-		
+		// adjust true total blocks based on default blocksize BLKSIZE
+		// note: stat struct st_blksize is in 512 B
+		if (BLKSIZE > 512) {
+			total_blocks = total_blocks / (BLKSIZE / 512);
+		} else {
+			total_blocks = total_blocks * (512 / BLKSIZE);
+		}
+
 		// print files and attributes - 
-		// 	TODO: print total disk space at top
-		//
-		printf("Total entries: %d\n", total_entries);
-			
+		printf("total %ld\n", total_blocks);			
 		for (int i = 0; i < total_entries; i++) {
 			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
 				fprintf(stderr, "ls: failed to get file info from \"%s\": %s\n", 
@@ -215,10 +223,9 @@ static int ls(char** args, int argcp)
 	if (closedir(dir) == -1) { 
 		perror("ls: failed to close directory");
 	}
-	return 1;
+	return 0;
 } // end of ls
 
-// TODO account for case num = 10
 static int numdigits(long long unsigned num) {
 	int digits = 1;
 	while ((num = num / 10) > 0) digits++;
@@ -254,53 +261,128 @@ static int cp (char** args, int argcp) {
 	}
 	char* src_path = args[1];
 	char* dest_path = args[2];
-	FILE* fsrc;
-	FILE* fdest;
+	FILE* fsrc = NULL;
+	FILE* fdest = NULL;
+	struct stat src_stat;
+	int init_success = 1;
 	// open for read, but only if file exists
 	if ( (fsrc = fopen(src_path, "r")) == NULL ) {
 		fprintf(stderr, "cp: unable to open source file \"%s\": %s\n", 
 			src_path, strerror(errno));
-		return -1;
+		init_success = 0;
 	}
-	struct stat src_stat;
-	if ( stat(src_path, &src_stat) == -1 ) {
-		fprintf(stderr, "cp: failed to get file info from \"%s\": %s\n", 
-			src_path, strerror(errno));
-		return -1;
-	} 
-	if (S_ISDIR(src_stat.st_mode)) {
-		fprintf(stderr, "cp: cannot copy a directory file\n");
-		return -1;
+	if (init_success) {
+		if ( stat(src_path, &src_stat) == -1 ) {
+			fprintf(stderr, "cp: failed to get file info from \"%s\": %s\n", 
+				src_path, strerror(errno));
+			init_success = 0;
+		} 
+	}
+	if (init_success) {
+		if (S_ISDIR(src_stat.st_mode)) {
+			fprintf(stderr, "cp: cannot copy a directory file\n");
+			init_success = 0;
+		}
 	}
 	// open for write, but only if dest filename does NOT exist 
-	if ((fdest = fopen(dest_path, "wx")) == NULL)  {
-		fprintf(stderr, "cp: unable to create destination file \"%s\": %s\n", 
-			dest_path, strerror(errno));
+	if (init_success) {
+		if ((fdest = fopen(dest_path, "wx")) == NULL)  {
+			fprintf(stderr, "cp: unable to create destination file \"%s\": %s\n", 
+				dest_path, strerror(errno));
+			init_success = 0;
+		}
+	}	
+	// if initializing failed, close streams before exit
+	if (!init_success) {
+		if (fsrc) {
+			if (fclose(fsrc) == EOF) {
+				perror("cp: failed to close source file");
+			}
+		}
+		if (fdest) {
+			if (fclose(fdest) == EOF) {
+				perror("cp: failed to close destination file");
+			}
+		}
 		return -1;
 	}
+
 	// begin file I/O
-	char buffer[BUFSIZ];
-		// TODO: change file permissions? Same as source file?
+	char buffer[BUFFSIZE];
 	size_t bytes_read;
 	size_t bytes_written;
-
+	int IO_success = 1;
 	// Loop to read input file until EOF or until a read/write error occurs.
 	do {
-		bytes_read = fread(buffer, sizeof(char), sizeof(buffer), fsrc);
-		bytes_written = fwrite(buffer, sizeof(char), bytes_read/(sizeof(char)), fdest);
+		bytes_read = fread(buffer, 1, sizeof(buffer), fsrc);
+		bytes_written = fwrite(buffer, 1, bytes_read, fdest);
 	} while (bytes_read > 0 && bytes_written == bytes_read);
 
 	if (ferror(fsrc)) {
 		fprintf(stderr, "cp: failed during read from source file \"%s\": %s\n", 
 			src_path, strerror(errno));
+		IO_success = 0;
 	}
 	if (bytes_written < bytes_read) {
 		fprintf(stderr, "cp: failed during write to destination file: \"%s\" %s\n", 
 			dest_path, strerror(errno));
+		IO_success = 0;
+	}
+        if ( chmod(dest_path, src_stat.st_mode) == -1) {
+		perror("cp: failed to modify destination file permissions");
+		IO_success = 0;
+	}
+	if (fclose(fsrc) == EOF) {
+		perror("cp: failed to close source file");
+		IO_success = 0;
+	}
+	if (fclose(fdest) == EOF) {
+		perror("cp: failed to close destination file");
+		IO_success = 0;
 	}
         
-	if (fclose(fsrc) == EOF) perror("cp: failed to close source file");
-	if (fclose(fdest) == EOF) perror("cp: failed to close destination file");
-        return 1;
+	if (IO_success) {
+		return 0; 
+	} else {
+		return -1;
+	}
+} //end cp
+
+static int env (char** args, int argcp) {
+	extern char** environ;
+	char** envp = environ;
+	
+	if (argcp == 1) 
+	{
+		while(*envp) {
+			printf("%s\n", *envp);
+			envp++;
+		}
+	}
+	else if (argcp == 2) 
+	{
+		// note: name or variable can be empty string. Name must not include '=' or NUL
+		char* var_name = args[1];
+		char* var_val;
+		char* p = args[1];
+		while(*p && *p != '=') p++;
+		if (*p) {		
+			*p = '\0';
+			var_val = p + 1; 
+		} else {
+			printf("Usage: env [NAME=VALUE]");
+		} 
+		setenv(var_name, var_val, 1);	
+	}
+	else // (argcp > 2) 
+	{
+		printf("env: too many arguments\n");
+		printf("Usage: env [NAME=VALUE]\n");
+		return -1;
+	}
+	return 0;
 }
 
+			
+
+ 
