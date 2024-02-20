@@ -12,7 +12,9 @@
 #define TRUE  (1)
 
 /*
-* argCount is a helper function that takes in a String and returns the number of "words" in the string assuming that whitespace is the only possible delimeter.
+* argCount is a helper function that takes in a String and 
+* returns the number of "words" in the string assuming that 
+* whitespace is the only possible delimeter.
 */
 static int argCount(char*line)
 {
@@ -30,14 +32,15 @@ static int argCount(char*line)
 
 /*
 *
-* Argparse takes in a String and returns an array of strings from the input.
+* Argparse takes in a String and returns a null terminated array of strings from the input.
 * The arguments in the String are broken up by whitespaces in the string.
 * The count of how many arguments there are is saved in the argcp pointer
+* 
 */
 char** argparse(char* line, int* argcp)
 {
 	*argcp = argCount(line);
-	char** args = malloc(*argcp * sizeof(char*));
+	char** args = malloc((*argcp + 1) * sizeof(char*));
 	int i = 0;
 	while (*line && *line != '\n') {
 		// skip leading whitespace
@@ -60,6 +63,8 @@ char** argparse(char* line, int* argcp)
 		while (*line && *line != ' ') line++;
 		i++;
 	}	
+	// add terminating NULL pointer
+	args[i] = NULL;
 	return args;
 }
 

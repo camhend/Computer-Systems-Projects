@@ -39,9 +39,7 @@ int main () {
 			free(line);
 			return EXIT_FAILURE;
 		}
-		processline(line);
-			
-		if (strcmp(line, "exit\n") == 0) break;
+		processline(line);		
 	}
 	
 	/*
@@ -120,10 +118,12 @@ void processline (char *line)
 			// execlp?
 		}
 	}
-	
-	for (int i = 0; i < argCount; i++) {
-		free(arguments[i]);
-		
+
+	// arguments form parseline must be freed, 
+	// including terminating NULL. 
+	// Then free the arguments pointer itself.	
+	for (int i = 0; i <= argCount; i++) {
+		free(arguments[i]);	
 	}
 	free(arguments);
   

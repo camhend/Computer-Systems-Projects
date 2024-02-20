@@ -16,14 +16,15 @@
 #include <grp.h>
 #include <stdint.h>
 #include <time.h>
+#include <limits.h>
 
 #define BUFFSIZE 4096
 #define BLKSIZE 1024 
 
 //Prototypes
-static void exitProgram(char** args, int argcp);
-static void cd(char** args, int argpcp);
-static void pwd(char** args, int argcp);
+static int exitProgram(char** args, int argcp);
+static int cd(char** args, int argpcp);
+static int pwd(char** args, int argcp);
 static int ls(char** args, int argcp);
 static int cp(char** args, int arrgcp);
 static int env (char** args, int argcp);
@@ -39,9 +40,9 @@ static int cmp_str(const void *l, const void *r);
 int builtIn(char** args, int argcp)
 {
 	if (argcp > 0) {	
-		     if (strcmp(args[0], "exit ") == 0) {}
-		else if (strcmp(args[0], "cd") == 0)    {}
-		else if (strcmp(args[0], "pwd") == 0)   {}
+		     if (strcmp(args[0], "exit") == 0)  { exitProgram(args, argcp); }
+		else if (strcmp(args[0], "cd") == 0)    { cd(args, argcp);  }
+		else if (strcmp(args[0], "pwd") == 0)   { pwd(args, argcp); }
 		else if (strcmp(args[0], "ls") == 0)    { ls(args, argcp);  }
 		else if (strcmp(args[0], "cp") == 0)    { cp(args, argcp);  }
 		else if (strcmp(args[0], "env") == 0) 	{ env(args, argcp); }
@@ -52,20 +53,64 @@ int builtIn(char** args, int argcp)
 	return 1;
 }
 
-static void exitProgram(char** args, int argcp)
+
+// exit code returned is input value modulo 256.
+// Values larger than LONG_MAX will exit with LONG_MAX % 256.
+// Similarly, values smaller than LONG_MIN will exit with LONG_MIN % 256. 
+static int exitProgram(char** args, int argcp)
 {
+	if (argcp > 2) {
+		fprintf(stderr, "Usage: exit [value]\n");
+		return -1;
+	}
 	
+	if (argcp == 1) { 
+		exit(0);
+	} else { // argcp == 2
+		char* endptr;
+		long input = strtol(args[1], &endptr, 10);
+		// no digits found in input	
+		if (args[1] == endptr) {
+			fprintf(stderr, "No digits found in input.\nUsage: exit [value]\n");
+			return -1;
+		}
+		exit( input % 256 );
+	}
 }
 
-static void pwd(char** args, int argpc)
+static int pwd(char** args, int argpc)
 {
-	
+	char buf[PATH_MAX + 1];
+	if (getcwd(buf, PATH_MAX + 1)) {
+		printf("%s\n", buf);
+	} else {
+		perror("pwd");
+		return -1;
+	}
+	return 0;	
 }
 
-
-static void cd(char** args, int argcp)
+// if no arguments, then cd to home dir
+static int cd(char** args, int argcp)
 {
- //write your code
+	if (argcp > 2) {
+		fprintf(stderr, "cd: too many arguments");
+		return -1;
+	}
+	else if (argcp == 1) { 
+		if (chdir("/home") != 0) {
+			perror("cd");
+			return -1;
+		}
+	}
+	// argcp == 2
+	else { 
+		if (chdir(args[1]) != 0) { 
+			perror("cd");
+			return -1;
+		}
+	}
+	return 0;
 }
 
 static int ls(char** args, int argcp) 
@@ -91,7 +136,7 @@ static int ls(char** args, int argcp)
 
 	// skip "." and ".."
 	long start_offset;
-	while (strcmp(dirent->d_name, ".") == 0 || strcmp(dirent->d_name, "..") == 0) {
+	while (dirent != NULL && (strcmp(dirent->d_name, ".") == 0 || strcmp(dirent->d_name, "..") == 0)) {
 		// get DIR offset of first dirent after "." and ".."
 		start_offset = telldir(dir);
 		dirent = readdir(dir);
@@ -124,7 +169,7 @@ static int ls(char** args, int argcp)
 		}
 		printf("\n");
 	}
-        // -l flag was entered: print long form
+        // -l option was entered: print long form
 	else 
 	{
 		long total_blocks = 0;
@@ -179,7 +224,7 @@ static int ls(char** args, int argcp)
 			total_blocks = total_blocks * (512 / BLKSIZE);
 		}
 
-		// print files and attributes - 
+		// print filesnames and attributes
 		printf("total %ld\n", total_blocks);			
 		for (int i = 0; i < total_entries; i++) {
 			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
@@ -202,18 +247,18 @@ static int ls(char** args, int argcp)
 			char mtim_str[30];
 			strftime(mtim_str, sizeof(mtim_str), "%b %d %H:%M", mtim_tm);
 
-			// begin print all attributes
-			printperms(dirent_stat);						// permissions
-			printf("%*d ",								// number of hard links 
+			// begin print all names and attributes
+			printperms(dirent_stat);				// permissions
+			printf("%*d ",						// number of hard links 
 				links_maxdigits, 
 				(int) (dirent_stat->st_nlink));  		               
-			printf("%*s ", ownername_maxlen, owner->pw_name);			// owner name
-			printf("%*s ", grpname_maxlen, grp->gr_name);				// group name
-			printf("%*llu ",							// file size 
+			printf("%*s ", ownername_maxlen, owner->pw_name);	// owner name
+			printf("%*s ", grpname_maxlen, grp->gr_name);		// group name
+			printf("%*llu ",					// file size 
 				filesize_maxdigits, 
 				(long long unsigned) (dirent_stat->st_size));                  
-			printf("%s ", mtim_str);						// modification time
-			printf("%s\n", filenames[i]);						// file name
+			printf("%s ", mtim_str);				// modification time
+			printf("%s\n", filenames[i]);				// file name
 		} 
 		
 	} // end of ls -l option
@@ -222,6 +267,7 @@ static int ls(char** args, int argcp)
 	}	
 	if (closedir(dir) == -1) { 
 		perror("ls: failed to close directory");
+		return -1;
 	}
 	return 0;
 } // end of ls
@@ -307,6 +353,8 @@ static int cp (char** args, int argcp) {
 		return -1;
 	}
 
+	/* successfully opened source and destination files */
+
 	// begin file I/O
 	char buffer[BUFFSIZE];
 	size_t bytes_read;
@@ -324,7 +372,7 @@ static int cp (char** args, int argcp) {
 		IO_success = 0;
 	}
 	if (bytes_written < bytes_read) {
-		fprintf(stderr, "cp: failed during write to destination file: \"%s\" %s\n", 
+		fprintf(stderr, "cp: failed during write to destination file \"%s\": %s\n", 
 			dest_path, strerror(errno));
 		IO_success = 0;
 	}
