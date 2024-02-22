@@ -1,3 +1,10 @@
+/* Cameron Henderson
+ * February 2024
+ * This is a series of functions that each take an array of
+ * string arguments to execute a result. The builtin function
+ * acts interface for executing these functions.
+ */
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,14 +36,14 @@ static int ls(char** args, int argcp);
 static int cp(char** args, int arrgcp);
 static int env (char** args, int argcp);
 static int numdigits(long long unsigned num);
-static void printperms(struct stat* dirent_stat);
+static void printperms(struct stat* statp);
 static int cmp_str(const void *l, const void *r);
 
 /* builtIn
- ** built in checks each built in command the given command, if the given command
+ * built in checks each built in command the given command, if the given command
  * matches one of the built in commands, that command is called and builtin returns 1.
- *If none of the built in commands match the wanted command, builtin returns 0;
-  */
+ * If none of the built in commands match the wanted command, builtin returns 0;
+ */
 int builtIn(char** args, int argcp)
 {
 	if (argcp > 0) {	
@@ -53,10 +60,14 @@ int builtIn(char** args, int argcp)
 	return 1;
 }
 
-
-// exit code returned is input value modulo 256.
-// Values larger than LONG_MAX will exit with LONG_MAX % 256.
-// Similarly, values smaller than LONG_MIN will exit with LONG_MIN % 256. 
+/* exitProgram
+ * Usage: exit [value]
+ * Exit the program with the given value. If no value is given, then exit with value 0.
+ * The exit value returned is the value modulo 256. Values larger than LONG_MAX 
+ * will exit with LONG_MAX % 256. Similarly, values smaller than LONG_MIN 
+ * will exit with LONG_MIN % 256. 
+ * Returns 0 on success, or -1 on failure.
+ */
 static int exitProgram(char** args, int argcp)
 {
 	if (argcp > 2) {
@@ -78,6 +89,11 @@ static int exitProgram(char** args, int argcp)
 	}
 }
 
+/* pwd
+ * Usage: pwd
+ * Print the current working directory.
+ * Returns 0 on success, or -1 on failure.
+ */
 static int pwd(char** args, int argpc)
 {
 	char buf[PATH_MAX + 1];
@@ -90,15 +106,22 @@ static int pwd(char** args, int argpc)
 	return 0;	
 }
 
-// if no arguments, then cd to home dir
+/* cd
+ * Usage: cd [directory] 
+ * This function changes the current working directory
+ * to the directory specified by the optional [directory] argument.
+ * If no directory argument is specified, then change directory
+ * to the home directory specified by the HOME environment variable.
+ * Returns 0 on success, or -1 on failure.
+*/
 static int cd(char** args, int argcp)
 {
 	if (argcp > 2) {
-		fprintf(stderr, "cd: too many arguments");
+		fprintf(stderr, "cd: too many arguments\n");
 		return -1;
 	}
 	else if (argcp == 1) { 
-		if (chdir("/home") != 0) {
+		if (chdir(getenv("HOME")) != 0) {
 			perror("cd");
 			return -1;
 		}
@@ -113,6 +136,17 @@ static int cd(char** args, int argcp)
 	return 0;
 }
 
+/* ls
+ * Usage: ls [-l]
+ * List all the files in the current directory. 
+ * If the optional argument [-l] is included, then list files in long format.
+ * In this long format, the total blocks allocated of size BLKSIZE is at the top.
+ * Then, each of the files are the listed in the following format:
+ * 
+ * [permissions] [number of hard links] [owner name] [group name] [file size] [modification time] [file name]
+ * 
+ * Returns 0 on success, or -1 on failure.
+ */
 static int ls(char** args, int argcp) 
 {
 	if (argcp > 2 ) {
@@ -132,32 +166,24 @@ static int ls(char** args, int argcp)
 	
 	DIR* dir = opendir("./");
 	int fd = dirfd(dir); // automatically closed by closedir(dir)
-	struct dirent* dirent = readdir(dir);
-
-	// skip "." and ".."
-	long start_offset;
-	while (dirent != NULL && (strcmp(dirent->d_name, ".") == 0 || strcmp(dirent->d_name, "..") == 0)) {
-		// get DIR offset of first dirent after "." and ".."
-		start_offset = telldir(dir);
-		dirent = readdir(dir);
-	}
+	struct dirent* dirent;
 	
 	int total_entries = 0;
-	while (dirent != NULL) {	
+	while ( (dirent = readdir(dir)) != NULL) {	
+		// skip filenames that start with '.'
+		if ( *(dirent->d_name) == '.') continue;
 		total_entries++;
-	      	dirent = readdir(dir);
 	}
-
-	// reset to first dirent after "." and ".."
-	seekdir(dir, start_offset);
-	dirent = readdir(dir);
-
+	rewinddir(dir);
+	
 	// make alphabetically sorted list of filenames	
 	char* filenames[total_entries];
-	for (int i = 0; i < total_entries; i++) {
+	int i = 0;
+	while ( (dirent = readdir(dir)) != NULL) {
+		if ( *(dirent->d_name) == '.') continue;
 		filenames[i] = malloc(strlen(dirent->d_name) + 1);
 		strcpy(filenames[i], dirent->d_name);
-		dirent = readdir(dir);
+		i++;
 	}		
 	qsort(filenames, total_entries, sizeof filenames[0], cmp_str);	
 	
@@ -181,7 +207,7 @@ static int ls(char** args, int argcp)
 		struct stat* dirent_stat = &statbuf;	
 
 		// Get total num entries, and total blocks allocated
-		// Also get max length of variable length attributes for column alignment
+		// Also get max length of attributes of variable length for column alignment
 		for (int i = 0; i < total_entries; i++) {
 			if ( fstatat(fd, filenames[i], dirent_stat, 0) == -1) {
 				fprintf(stderr, "ls: failed to get file info from \"%s\": %s\n", 
@@ -211,7 +237,6 @@ static int ls(char** args, int argcp)
 			b = strlen(grp->gr_name);
 			grpname_maxlen = a > b ? a : b;
 			
-
 			a = filesize_maxdigits;
 			b = numdigits( (long long unsigned) (dirent_stat->st_size));
 			filesize_maxdigits = a > b ? a : b;
@@ -272,15 +297,25 @@ static int ls(char** args, int argcp)
 	return 0;
 } // end of ls
 
+/* numdigits
+ * This fuction takes a long long unsigned number 
+ * and counts the number of digits required to 
+ * express it in base 10. 
+ * Returns the number of digits.
+ */
 static int numdigits(long long unsigned num) {
 	int digits = 1;
 	while ((num = num / 10) > 0) digits++;
      	return digits;	
 }
 
-static void printperms(struct stat* dirent_stat) {
-	if (!dirent_stat) return;
-	mode_t m = dirent_stat->st_mode;
+/* printperms
+ * This function takes a pointer to a stat struct, 
+ * and prints the st_mode member in a human readable format.
+ */
+static void printperms(struct stat* statp) {
+	if (!statp) return;
+	mode_t m = statp->st_mode;
 	printf( S_ISDIR(m) ? "d" : "-" );	
 	printf( m & S_IRUSR ? "r" : "-" );
 	printf( m & S_IWUSR ? "w" : "-" );
@@ -295,14 +330,28 @@ static void printperms(struct stat* dirent_stat) {
 	return;
 }
 
+/* This function is an interface for compatability with qsort. 
+ * qsort takes this function as an argument to sort elements
+ * alphabetically, case insensitive.
+ */
 static int cmp_str(const void* l, const void* r) {
 	return strcasecmp(* (const char**) l, *(const char**) r);
 }
 
+/* cp
+ * Usage: cp <source-filename> <destination-filename>
+ * This function takes the file specified by the first argument, 
+ * and copies as a new file, with name specified by the second argument.
+ * This function will fail if it is unable to open the source file, 
+ * such as if the file does not exist, or if it cannot create the destination file.
+ * If the destination filename already exists, it will NOT be overwritten.
+ * All filetypes can be copied, except for directories.
+ * Returns 0 on success, or -1 on failure.
+ */
 static int cp (char** args, int argcp) {
 
 	if (argcp != 3) {
-		printf("Usage: cp [src_file_name] [dest_file_name]\n");
+		printf("Usage: cp <src_file_name> <dest_file_name>\n");
 		return -1;
 	}
 	char* src_path = args[1];
@@ -396,10 +445,22 @@ static int cp (char** args, int argcp) {
 	}
 } //end cp
 
+
+/* env
+ * Usage: env [NAME=VALUE]
+ * This function prints the list of enviornment variables.
+ * If the option [NAME=VALUE] is entered, then the environment
+ * variable NAME is set to VALUE. "NAME=" will set the NAME variable
+ * to an empty value. NAME can also be empty as in "=VARIABLE". 
+ * Both NAME and VARAIABLE may contain any character except for ASCII NUL.
+ * The first '=' is evaluated as the delimeter between NAME and VARIABLE.
+ * Returns 0 on success, and -1 on failure.
+ */
 static int env (char** args, int argcp) {
 	extern char** environ;
 	char** envp = environ;
 	
+	// print environment variables
 	if (argcp == 1) 
 	{
 		while(*envp) {
@@ -407,9 +468,12 @@ static int env (char** args, int argcp) {
 			envp++;
 		}
 	}
-	else if (argcp == 2) 
+	// set NAME=VALUE
+	else if (argcp == 2)
 	{
-		// note: name or variable can be empty string. Name must not include '=' or NUL
+		// Name or variable can be empty string. 
+		// NAME and VALUE must not contain NUL. 
+		// Evaluates first '=' as delimiter between NAME and VALUE
 		char* var_name = args[1];
 		char* var_val;
 		char* p = args[1];
@@ -422,7 +486,8 @@ static int env (char** args, int argcp) {
 		} 
 		setenv(var_name, var_val, 1);	
 	}
-	else // (argcp > 2) 
+	// (argcp > 2) 
+	else 
 	{
 		printf("env: too many arguments\n");
 		printf("Usage: env [NAME=VALUE]\n");

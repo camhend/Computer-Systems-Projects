@@ -1,5 +1,6 @@
 /* CS 347 -- Mini Shell!
  * Original author Phil Nelson 2000
+ * Implementations authored by Cameron Henderson 2024
  */
 #include <assert.h>
 #include <stdio.h>
@@ -15,80 +16,56 @@
 
 
 /* PROTOTYPES */
-
 void processline (char *line);
 ssize_t getinput(char** line, size_t* size);
 
-/* main
- * This function is the main entry point to the program.  This is essentially
- * the primary read-eval-print loop of the command interpreter.
+/* main 
+ * This program is a unix command-line shell. 
+ * This main function is the primary read-eval-print loop.
+ * The command line is read a single string then broken into 
+ * individual arguments. The arguments are then processed
+ * as a command.
+ *  
+ * This program exits when exit is called as a processed
+ * command. This program will also exit when there is an
+ * error in retreiving the input command line, in which
+ * case it will exit with EXIT_FAILURE.
  */
-
-int main () {
-
+int main() {
 	char* line = NULL;
 	size_t size = 0;
 	ssize_t len;
-
-		
 	while (1) {	
 		printf("%% ");	
 		//If getinput fails, quit 
-		//TODO: try to recover stdin after failure?
-		if ( (len = getinput(&line, &size) == -1) ) {
-			free(line);
+		if ( (len = getinput(&line, &size)) == -1 ) {
 			return EXIT_FAILURE;
 		}
 		processline(line);		
-	}
-	
-	/*
-	printf("Running ls -l: \n");
-	char* args[2] = {"ls", "-l"};
-	int argc = 2;
-	ls(args, argc);
-
-	printf("\nRunning ls: \n");
-	char* args2[1] = {"ls"};
-	int argc2 = 1;
-	ls(args2, argc2);
-	
-
-	printf("\nRunning cp test some3.txt: \n");
-	char* args2[3] = {"cp", "test", "some3.txt"};
-	int argc2 = 3;
-	cp(args2, argc2);
-	*/
-
-
-	free(line);
-
-//write your code
-//use getinput and processline as appropriate
-
-	return EXIT_SUCCESS;
+	}	
+	return EXIT_FAILURE;
 }
-
 
 /* getinput
 * line     A pointer to a char* that points at a buffer of size *size or NULL.
 * size     The size of the buffer *line or 0 if *line is NULL.
-* returns  The length of the string stored in *line.
-*
+
 * This function prompts the user for input, e.g., %myshell%.  If the input fits in the buffer
 * pointed to by *line, the input is placed in *line.  However, if there is not
 * enough room in *line, *line is freed and a new buffer of adequate space is
 * allocated.  The number of bytes allocated is stored in *size. 
-* Hint: There is a standard i/o function that can make getinput easier than it sounds.
+* 
+* Returns the length of the string stored in *line. On failure, -1 is returned instead,
+* and an error statement is printed. If the failure was due to receving EOF from the input,
+* then no error statement is printed. 
 */
 ssize_t getinput(char** line, size_t* size) {
 	ssize_t len = 0;
 	if (*line == NULL) *size = 0;
-	len = getline(line, size, stdin);	
-	if (len == -1 ) perror("Failed to read input line");
+	len = getline(line, size, stdin);
+	if (len == -1 && !feof(stdin)) perror("Failed to read input line");
 	return len;
 }
-
 
 /* processline
  * The parameter line is interpreted as a command name.  This function creates a
@@ -103,30 +80,33 @@ void processline (char *line)
   //write your code
     
 	pid_t cpid;
-	int   status;
+	int status;
 	int argCount;
-
 	char** arguments = argparse(line, &argCount); 
-
 	if (argCount > 0) {
-		if (builtIn(arguments, argCount)) {
-			// execute builtin command
-			
-		} else {
-			printf("Not a builtin function\n");
-			// fork to execute command
-			// execlp?
-		}
+		if (builtIn(arguments, argCount) == 0) {
+			cpid = fork();
+			if (cpid > 0) {
+				cpid = wait(&status);
+				if (cpid == -1) {
+					perror("myshell: Failed during wait for child process");
+				}
+			} else if (cpid == 0) {
+				if (execvp(arguments[0], arguments) == -1) {
+					fprintf(stderr, "myshell: Child process failed to execute file \"%s\": %s\n", 
+						arguments[0], strerror(errno));
+					exit(EXIT_FAILURE);
+				}
+			} else { // cpid == -1
+				perror("myshell: Failed to fork to child process");
+			}
+		} 
 	}
-
 	// arguments form parseline must be freed, 
-	// including terminating NULL. 
-	// Then free the arguments pointer itself.	
-	for (int i = 0; i <= argCount; i++) {
+	// then free the arguments pointer itself.	
+	for (int i = 0; i < argCount; i++) {
 		free(arguments[i]);	
 	}
-	free(arguments);
-  
-  
+	free(arguments); 
   }
 
