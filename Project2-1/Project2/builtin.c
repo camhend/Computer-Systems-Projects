@@ -221,6 +221,7 @@ static int ls(char** args, int argcp)
 				return -1;
 			}	
 			total_blocks += dirent_stat->st_blocks;
+	
 
 			struct passwd* user = getpwuid(dirent_stat->st_uid);
 			struct group* grp = getgrgid(dirent_stat->st_gid);
@@ -235,8 +236,8 @@ static int ls(char** args, int argcp)
 
 			a = grpname_maxlen;
 			b = strlen(grp->gr_name);
-			grpname_maxlen = a > b ? a : b;
-			
+			grpname_maxlen = a > b ? a : b;		
+
 			a = filesize_maxdigits;
 			b = numdigits( (long long unsigned) (dirent_stat->st_size));
 			filesize_maxdigits = a > b ? a : b;
@@ -273,17 +274,17 @@ static int ls(char** args, int argcp)
 			strftime(mtim_str, sizeof(mtim_str), "%b %d %H:%M", mtim_tm);
 
 			// begin print all names and attributes
-			printperms(dirent_stat);				// permissions
-			printf("%*d ",						// number of hard links 
+			printperms(dirent_stat);							// permissions
+			printf("%*d ",										// number of hard links 
 				links_maxdigits, 
 				(int) (dirent_stat->st_nlink));  		               
 			printf("%*s ", ownername_maxlen, owner->pw_name);	// owner name
 			printf("%*s ", grpname_maxlen, grp->gr_name);		// group name
-			printf("%*llu ",					// file size 
+			printf("%*llu ",									// file size 
 				filesize_maxdigits, 
 				(long long unsigned) (dirent_stat->st_size));                  
-			printf("%s ", mtim_str);				// modification time
-			printf("%s\n", filenames[i]);				// file name
+			printf("%s ", mtim_str);							// modification time
+			printf("%s\n", filenames[i]);						// file name
 		} 
 		
 	} // end of ls -l option
